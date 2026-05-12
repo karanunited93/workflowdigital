@@ -465,6 +465,59 @@ try{
   console.log('Firebase connected ✅');
 }catch(e){console.warn('Firebase offline — using localStorage for chat', e);}
 
+/* ── Firebase helpers for team + accounts persistence ── */
+function fbSaveTeam(){
+  if(!fbOk||!db)return;
+  db.ref('wireflow_team').set(TEAM).catch(e=>console.warn('Team save failed',e));
+}
+function fbSaveAccounts(){
+  if(!fbOk||!db)return;
+  db.ref('wireflow_accounts').set(ACCTS).catch(e=>console.warn('Accounts save failed',e));
+}
+function fbSaveTasks(){
+  if(!fbOk||!db)return;
+  db.ref('wireflow_tasks').set(tasks).catch(e=>console.warn('Tasks save failed',e));
+}
+function fbSavePitches(){
+  if(!fbOk||!db)return;
+  db.ref('wireflow_pitches').set(pitches).catch(e=>console.warn('Pitches save failed',e));
+}
+function fbSaveOps(){
+  if(!fbOk||!db)return;
+  db.ref('wireflow_ops').set(ops).catch(e=>console.warn('Ops save failed',e));
+}
+function fbSaveApprovals(){
+  if(!fbOk||!db)return;
+  db.ref('wireflow_approvals').set(approvalLog).catch(e=>console.warn('Approvals save failed',e));
+}
+function fbSaveAll(){
+  fbSaveTasks();fbSavePitches();fbSaveOps();
+}
+function fbLoadTeamAndAccounts(cb){
+  if(!fbOk||!db){cb&&cb();return;}
+  const loads=[
+    db.ref('wireflow_team').once('value').then(snap=>{
+      if(snap.exists()){const s=snap.val();if(Array.isArray(s)&&s.length>0){TEAM.length=0;s.forEach(m=>TEAM.push(m));}}
+    }),
+    db.ref('wireflow_accounts').once('value').then(snap=>{
+      if(snap.exists()){const s=snap.val();if(Array.isArray(s)&&s.length>0){ACCTS.length=0;s.forEach(a=>ACCTS.push(a));}}
+    }),
+    db.ref('wireflow_tasks').once('value').then(snap=>{
+      if(snap.exists()){const s=snap.val();if(Array.isArray(s)&&s.length>0){tasks.length=0;s.forEach(t=>tasks.push(t));}}
+    }),
+    db.ref('wireflow_pitches').once('value').then(snap=>{
+      if(snap.exists()){const s=snap.val();if(Array.isArray(s)&&s.length>0){pitches.length=0;s.forEach(p=>pitches.push(p));}}
+    }),
+    db.ref('wireflow_ops').once('value').then(snap=>{
+      if(snap.exists()){const s=snap.val();if(Array.isArray(s)&&s.length>0){ops.length=0;s.forEach(o=>ops.push(o));}}
+    }),
+    db.ref('wireflow_approvals').once('value').then(snap=>{
+      if(snap.exists()){const s=snap.val();if(Array.isArray(s)&&s.length>0){approvalLog.length=0;s.forEach(a=>approvalLog.push(a));}}
+    }),
+  ];
+  Promise.all(loads).then(()=>{ cb&&cb(); }).catch(e=>{console.warn('Load failed',e);cb&&cb();});
+}
+
 /* ══════ DATA ══════ */
 const ACCTS=[
   {id:'mobikwik',  name:'MobiKwik',        type:'Performance + Social',     lead:'keerthi',emoji:'💳',color:'av-b'},
@@ -587,10 +640,9 @@ function fmtDate(d){if(!d)return'—';const[y,m,day]=d.split('-');const mos=['Ja
 
 /* ══════ SIDEBAR ACCOUNTS ══════ */
 function buildAcctNav(){
-  const addBtn=cu&&cu.admin?`<div class="ni" onclick="openCreateSpace()" style="color:var(--tx3);font-style:italic;"><span style='font-size:13px;'>＋</span> New space</div>`:'';
   document.getElementById('acct-nav').innerHTML=ACCTS.map(a=>
     `<div class="ni" data-v="acct-${a.id}" onclick="goNav(this,'acct-${a.id}')"><span style="font-size:13px;">${a.emoji}</span> ${a.name}</div>`
-  ).join('');
+  ).join('')+(cu&&cu.admin?'<div class="ni" onclick="openCreateSpace()" style="border:1px dashed var(--bdr2);color:var(--tx3);margin-top:4px;justify-content:center;font-size:12px;">＋ Add account</div>':'');
 }
 
 /* ══════ NAV ══════ */
@@ -1180,12 +1232,14 @@ function addCmt(id){
   t.cmts.push({u:cu.id,t:txt,ts:'just now'});
   t.taskLog.push({u:cu.id,txt:`commented: "${txt.substring(0,50)}"`,ts:tsNow()});
   logAct(`Commented on "${t.name.substring(0,40)}"`, 'task');
+  fbSaveTasks();
   openTaskDr(id);
 }
 function toggleSubtask(id,i){
   const t=ensureTaskFields(tasks.find(t=>t.id===id));
   t.subtasks[i].done=!t.subtasks[i].done;
   t.taskLog.push({u:cu.id,txt:`${t.subtasks[i].done?'completed':'reopened'} subtask "${t.subtasks[i].text.substring(0,30)}"`,ts:tsNow()});
+  fbSaveTasks();
   openTaskDr(id);
 }
 function delSubtask(id,i){const t=ensureTaskFields(tasks.find(t=>t.id===id));t.subtasks.splice(i,1);openTaskDr(id);}
@@ -1283,6 +1337,7 @@ async function processFileUpload(file,id){
     t.attachments.push({name:file.name,url:result.url,type:ext.toUpperCase(),icon,size:sizeStr,added:new Date().toLocaleDateString('en-GB',{day:'numeric',month:'short'})});
     t.taskLog.push({u:cu.id,txt:`uploaded "${file.name}"`,ts:tsNow()});
     logAct(`Uploaded "${file.name}" to task "${t.name.substring(0,30)}"`, 'doc');
+    fbSaveTasks();
     closeUploadModal();
     openTaskDr(id);
   }catch(err){
@@ -1303,6 +1358,7 @@ function addLinkAttach(id){
   t.attachments.push({name:finalName,url,type,icon,added:new Date().toLocaleDateString('en-GB',{day:'numeric',month:'short'})});
   t.taskLog.push({u:cu.id,txt:`linked "${finalName}"`,ts:tsNow()});
   logAct(`Linked "${finalName}" to task "${t.name.substring(0,30)}"`, 'doc');
+  fbSaveTasks();
   closeUploadModal();
   openTaskDr(id);
 }
@@ -1362,6 +1418,7 @@ function addDocToPitch(pid){
   const d={name,type:DOC_TYPES.includes(type)?type:'Other',url,added:new Date().toLocaleDateString('en-GB',{day:'numeric',month:'short'})};
   p.docs.push(d);
   logAct(`Added "${name}" to ${p.name}`,'doc');
+  fbSavePitches();
   openPitchDr(pid);
 }
 function removeDoc(pid,idx){
@@ -1415,6 +1472,7 @@ function mkTask(){
   const t={id:nid++,name:n,acct:document.getElementById('nt-a').value,who:document.getElementById('nt-w').value,stage:document.getElementById('nt-s').value,pri:document.getElementById('nt-p').value,start:document.getElementById('nt-st').value,due:document.getElementById('nt-d').value,cmts:[],by:cu.id};
   tasks.unshift(t);
   logAct(`Created task "${n}" on ${gA(t.acct).name}`,'task');
+  fbSaveTasks();
   closeDr();renderView(cv);
 }
 
@@ -1437,6 +1495,7 @@ function mkPitch(){
   const n=document.getElementById('np-n')?.value?.trim();if(!n)return;
   pitches.push({id:'p'+Date.now(),name:n,contact:document.getElementById('np-c').value,val:document.getElementById('np-v').value,stage:document.getElementById('np-s').value,who:document.getElementById('np-o').value,docs:[]});
   logAct(`Added pitch: ${n}`,'pitch');
+  fbSavePitches();
   closeDr();renderView('pitches');
 }
 
@@ -1460,6 +1519,7 @@ function mkOps(){
   const n=document.getElementById('no-n')?.value?.trim();if(!n)return;
   ops.push({id:'o'+Date.now(),name:n,who:document.getElementById('no-w').value,stage:'backlog',start:document.getElementById('no-st').value,due:document.getElementById('no-d').value,pct:0});
   logAct(`Added internal task: ${n}`,'task');
+  fbSaveOps();
   closeDr();renderView('ops');
 }
 
@@ -1492,10 +1552,11 @@ function mkPerson(){
   const role=document.getElementById('pm-role')?.value?.trim()||'Team member';
   const color=document.getElementById('pm-color').value;
   const isLead=document.getElementById('pm-lead').value==='lead';
-  const id=name.toLowerCase().replace(/\s+/g,'_')+Date.now();
+  const id=name.toLowerCase().replace(/[^a-z0-9]/gi,'_')+'_'+Date.now();
   TEAM.push({id,name,ini,role,color,lead:isLead,admin:false});
   chatMsgs[id]=[];unread[id]=0;
   logAct(`Added ${name} to the team`,'announce');
+  fbSaveTeam();
   closeDr();renderView('people');
 }
 function openEditPersonDr(id){
@@ -1503,14 +1564,21 @@ function openEditPersonDr(id){
   const m=gT(id);
   document.getElementById('dt').textContent='Edit: '+m.name;
   document.getElementById('db').innerHTML=`
-    <div class="fg"><label class="fl">Name</label><input class="fi" id="ep-name" value="${m.name}"></div>
-    <div class="fg"><label class="fl">Role</label><input class="fi" id="ep-role" value="${m.role}"></div>
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;padding:12px;background:var(--surf2);border-radius:var(--r);">
+      <div class="av av-lg ${m.color}">${m.ini}</div>
+      <div><div style="font-size:14px;font-weight:600;">${m.name}</div><div style="font-size:11px;color:var(--tx3);">${m.role}</div></div>
+    </div>
+    <div class="fi-row">
+      <div class="fg"><label class="fl">Full name</label><input class="fi" id="ep-name" value="${m.name}" placeholder="Full name"></div>
+      <div class="fg"><label class="fl">Initials</label><input class="fi" id="ep-ini" value="${m.ini}" maxlength="2" placeholder="e.g. KA" style="text-transform:uppercase;"></div>
+    </div>
+    <div class="fg"><label class="fl">Role / Title</label><input class="fi" id="ep-role" value="${m.role}" placeholder="e.g. Senior Designer"></div>
     <div class="fg"><label class="fl">Avatar colour</label>
       <select class="fi" id="ep-color">${AV_COLORS.map(c=>`<option value="${c}" ${m.color===c?'selected':''}>${c.replace('av-','')}</option>`).join('')}</select></div>
     <div class="fg"><label class="fl">Permissions</label>
       <select class="fi" id="ep-lead">
-        <option value="member" ${!m.lead?'selected':''}>Member</option>
-        <option value="lead" ${m.lead?'selected':''}>Account Lead</option>
+        <option value="member" ${!m.lead?'selected':''}>Member — view + update own tasks</option>
+        <option value="lead" ${m.lead?'selected':''}>Account Lead — manage own accounts</option>
       </select></div>
     <div class="divider"></div>
     <div style="display:flex;gap:8px;justify-content:flex-end;">
@@ -1522,10 +1590,21 @@ function openEditPersonDr(id){
 }
 function savePerson(id){
   const m=TEAM.find(m=>m.id===id);if(!m)return;
-  m.name=document.getElementById('ep-name').value.trim()||m.name;
+  const newName=document.getElementById('ep-name').value.trim();
+  const newIni=document.getElementById('ep-ini')?.value?.trim().toUpperCase().slice(0,2);
+  m.name=newName||m.name;
+  m.ini=newIni||m.ini||(m.name.slice(0,2).toUpperCase());
   m.role=document.getElementById('ep-role').value.trim()||m.role;
   m.color=document.getElementById('ep-color').value;
   m.lead=document.getElementById('ep-lead').value==='lead';
+  fbSaveTeam();
+  // Update sidebar user bar if editing current user
+  if(m.id===cu.id){
+    document.getElementById('sb-av').textContent=m.ini;
+    document.getElementById('sb-av').className='av '+m.color;
+    document.getElementById('sb-name').textContent=m.name;
+    document.getElementById('sb-role').textContent=m.role;
+  }
   closeDr();renderView('people');
 }
 function removePerson(id){
@@ -1534,6 +1613,7 @@ function removePerson(id){
   const idx=TEAM.findIndex(m=>m.id===id);
   if(idx>-1)TEAM.splice(idx,1);
   delete chatMsgs[id];delete unread[id];
+  fbSaveTeam();
   closeDr();renderView('people');
 }
 
@@ -1600,21 +1680,41 @@ function closeModal(){const ov=document.getElementById('modal-ov');if(ov)ov.clas
 
 /* ══════ CREATE / EDIT / DELETE SPACE ══════ */
 function openCreateSpace(){
-  if(!cu.admin){alert('Only Karan (COO) can create new spaces.');return;}
+  if(!cu.admin){alert('Only Karan (COO) can create new accounts.');return;}
   let ov=document.getElementById('modal-ov');
-  if(!ov){ov=document.createElement('div');ov.id='modal-ov';ov.className='modal-ov';ov.innerHTML='<div class="modal-box" onclick="event.stopPropagation()"><div class="modal-head"><div style="font-size:14px;font-weight:600;flex:1;"></div><button class="btn btn-xs" onclick="closeModal()">✕</button></div><div class="modal-body" id="modal-body"></div></div>';ov.onclick=function(e){if(e.target===ov)closeModal();};document.body.appendChild(ov);}
-  document.querySelector('#modal-ov .modal-head div').textContent='Create new account space';
+  if(!ov){
+    ov=document.createElement('div');ov.id='modal-ov';ov.className='modal-ov';
+    ov.innerHTML='<div class="modal-box" style="width:500px;" onclick="event.stopPropagation()"><div class="modal-head"><div style="font-size:14px;font-weight:600;flex:1;"></div><button class="btn btn-xs" onclick="closeModal()">✕</button></div><div class="modal-body" id="modal-body"></div></div>';
+    ov.onclick=function(e){if(e.target===ov)closeModal();};
+    document.body.appendChild(ov);
+  }
+  document.querySelector('#modal-ov .modal-head div').textContent='Add new client account';
   ov.classList.add('open');
+  const leads=TEAM.filter(m=>m.lead||m.admin);
   document.getElementById('modal-body').innerHTML=`
-    <div class="fg"><label class="fl">Client / Account name</label><input class="fi" id="ns-name" placeholder="e.g. Zomato"></div>
-    <div class="fg"><label class="fl">Emoji icon</label><input class="fi" id="ns-emoji" placeholder="e.g. 🍕" style="font-size:20px;" maxlength="2" value="📋"></div>
-    <div class="fg"><label class="fl">Type / Mandate</label><input class="fi" id="ns-type" placeholder="e.g. Performance + Influencer"></div>
-    <div class="fg"><label class="fl">Account lead</label><select class="fi" id="ns-lead">${TEAM.filter(m=>m.lead).map(m=>`<option value="${m.id}">${m.name}</option>`).join('')}</select></div>
-    <div class="fg"><label class="fl">Avatar colour</label><select class="fi" id="ns-color">${['av-g','av-b','av-a','av-p','av-r','av-k'].map(c=>`<option value="${c}">${c.replace('av-','')}</option>`).join('')}</select></div>
+    <div style="background:var(--surf2);border-radius:var(--r);padding:12px 14px;margin-bottom:16px;font-size:12px;color:var(--tx2);">
+      A new account space creates a dedicated Kanban board, overview, and task area for this client.
+    </div>
+    <div class="fi-row">
+      <div class="fg" style="flex:2"><label class="fl">Client / Account name</label><input class="fi" id="ns-name" placeholder="e.g. Zomato" autofocus></div>
+      <div class="fg" style="flex:0 0 80px"><label class="fl">Emoji</label><input class="fi" id="ns-emoji" placeholder="🍕" style="font-size:18px;text-align:center;" maxlength="2" value="📋"></div>
+    </div>
+    <div class="fg"><label class="fl">Mandate / Type of work</label><input class="fi" id="ns-type" placeholder="e.g. Performance Marketing + Social Media"></div>
+    <div class="fi-row">
+      <div class="fg"><label class="fl">Account lead</label>
+        <select class="fi" id="ns-lead">${leads.map(m=>`<option value="${m.id}">${m.name} — ${m.role}</option>`).join('')}</select>
+      </div>
+      <div class="fg"><label class="fl">Colour</label>
+        <select class="fi" id="ns-color">${['av-g','av-b','av-a','av-p','av-r','av-k','av-t','av-o'].map(c=>`<option value="${c}">${c.replace('av-','').toUpperCase()}</option>`).join('')}</select>
+      </div>
+    </div>
+    <div class="divider"></div>
     <div style="display:flex;gap:8px;justify-content:flex-end;">
       <button class="btn btn-sm" onclick="closeModal()">Cancel</button>
-      <button class="btn btn-sm btn-dark" onclick="createSpace()">Create space</button>
+      <button class="btn btn-sm btn-grn" onclick="createSpace()">Create account</button>
     </div>`;
+  // Focus name field
+  setTimeout(()=>document.getElementById('ns-name')?.focus(),100);
 }
 function createSpace(){
   const name=document.getElementById('ns-name')?.value?.trim();if(!name)return;
@@ -1622,6 +1722,7 @@ function createSpace(){
   const newAcct={id,name,type:document.getElementById('ns-type').value||'New mandate',lead:document.getElementById('ns-lead').value,emoji:document.getElementById('ns-emoji').value||'📋',color:document.getElementById('ns-color').value};
   ACCTS.push(newAcct);
   logAct(`Created new space: ${name}`,'announce');
+  fbSaveAccounts();
   closeModal();buildAcctNav();
   // Navigate to new space
   const navEl=document.querySelector(`[data-v="acct-${id}"]`);
@@ -1652,12 +1753,14 @@ function saveSpace(id){
   a.emoji=document.getElementById('es-emoji').value||a.emoji;
   a.type=document.getElementById('es-type').value.trim()||a.type;
   a.lead=document.getElementById('es-lead').value;
+  fbSaveAccounts();
   closeModal();buildAcctNav();renderView('acct-'+id);
 }
 function deleteSpace(id){
   if(!confirm('Delete this space and all its tasks? This cannot be undone.'))return;
   const idx=ACCTS.findIndex(a=>a.id===id);if(idx>-1)ACCTS.splice(idx,1);
   tasks=tasks.filter(t=>t.acct!==id);
+  fbSaveAccounts();
   closeModal();buildAcctNav();goNav(document.querySelector('[data-v="dashboard"]'),'dashboard');
 }
 
@@ -1841,16 +1944,27 @@ function onStageChange(taskId, newStage){
   if(newStage==='approved'){
     logApproval(t.name, t.who);
     logAct('"'+t.name.substring(0,40)+'" approved','task');
+    fbSaveApprovals();
   }
+  fbSaveTasks();
 }
 
 /* ══════ INIT ══════ */
-buildAcctNav();
 loadChatFromStorage();
-// Sync Firebase chat after short delay (let FB connect first)
-setTimeout(syncChatFromFirebase, 1500);
-renderView('dashboard');
-updUnread();
+// Load persisted team + accounts from Firebase, then boot
+fbLoadTeamAndAccounts(()=>{
+  buildAcctNav();
+  renderView('dashboard');
+  updUnread();
+  // Sync chat after UI is ready
+  setTimeout(syncChatFromFirebase, 1500);
+});
+// Fallback: if Firebase takes too long, boot anyway
+setTimeout(()=>{
+  if(!document.getElementById('content').innerHTML){
+    buildAcctNav();renderView('dashboard');updUnread();
+  }
+}, 3000);
 </script>
 </body>
 </html>
